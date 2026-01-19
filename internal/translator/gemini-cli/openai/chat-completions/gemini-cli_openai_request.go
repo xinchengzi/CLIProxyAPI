@@ -283,12 +283,14 @@ func ConvertOpenAIRequestToGeminiCLI(modelName string, inputRawJSON []byte, _ bo
 		}
 	}
 
-	// tools -> request.tools[].functionDeclarations + request.tools[].googleSearch passthrough
+	// tools -> request.tools (separate tool objects for functionDeclarations, googleSearch, etc.)
 	tools := gjson.GetBytes(rawJSON, "tools")
 	if tools.IsArray() && len(tools.Array()) > 0 {
 		functionToolNode := []byte(`{}`)
 		hasFunction := false
-		googleSearchNodes := make([][]byte, 0)
+		hasGoogleSearch := false
+		googleSearchNode := []byte(`{}`)
+
 		for _, t := range tools.Array() {
 			if t.Get("type").String() == "function" {
 				fn := t.Get("function")
@@ -339,26 +341,28 @@ func ConvertOpenAIRequestToGeminiCLI(modelName string, inputRawJSON []byte, _ bo
 				}
 			}
 			if gs := t.Get("google_search"); gs.Exists() {
-				googleToolNode := []byte(`{}`)
 				var errSet error
-				googleToolNode, errSet = sjson.SetRawBytes(googleToolNode, "googleSearch", []byte(gs.Raw))
+				googleSearchNode, errSet = sjson.SetRawBytes(googleSearchNode, "googleSearch", []byte(gs.Raw))
 				if errSet != nil {
 					log.Warnf("Failed to set googleSearch tool: %v", errSet)
 					continue
 				}
-				googleSearchNodes = append(googleSearchNodes, googleToolNode)
+				hasGoogleSearch = true
 			}
 		}
-		if hasFunction || len(googleSearchNodes) > 0 {
-			toolsNode := []byte("[]")
-			if hasFunction {
-				toolsNode, _ = sjson.SetRawBytes(toolsNode, "-1", functionToolNode)
-			}
-			for _, googleNode := range googleSearchNodes {
-				toolsNode, _ = sjson.SetRawBytes(toolsNode, "-1", googleNode)
-			}
-			out, _ = sjson.SetRawBytes(out, "request.tools", toolsNode)
+
+		out, _ = sjson.SetRawBytes(out, "request.tools", []byte("[]"))
+		idx := 0
+		if hasFunction {
+			out, _ = sjson.SetRawBytes(out, "request.tools."+itoa(idx), functionToolNode)
+			idx++
 		}
+		if !hasGoogleSearch {
+			googleSearchNode, _ = sjson.SetRawBytes(googleSearchNode, "googleSearch", []byte("{}"))
+		}
+		out, _ = sjson.SetRawBytes(out, "request.tools."+itoa(idx), googleSearchNode)
+	} else {
+		out, _ = sjson.SetRawBytes(out, "request.tools", []byte(`[{"googleSearch":{}}]`))
 	}
 
 	return common.AttachDefaultSafetySettings(out, "request.safetySettings")
