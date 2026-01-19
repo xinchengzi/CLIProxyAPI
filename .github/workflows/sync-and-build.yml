@@ -1,7 +1,7 @@
 name: Sync Upstream and Build
 on:
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
 jobs:
   sync-and-build:
@@ -23,16 +23,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           git remote add upstream https://github.com/router-for-me/CLIProxyAPI.git
-          git fetch upstream
+          git fetch upstream --tags
           
-          git checkout main
+          git checkout origin/main
+          git switch -C main
           git reset --hard upstream/main
           git push origin main --force
           
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
           echo "version=${VERSION#v}-local" >> $GITHUB_OUTPUT
           
-          git checkout local
+          git checkout origin/local
+          git switch -C local
           if git rebase main; then
             git push origin local --force
             echo "rebase_success=true" >> $GITHUB_OUTPUT
